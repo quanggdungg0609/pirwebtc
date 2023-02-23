@@ -7,7 +7,6 @@ class OpenCVStreamTrack(VideoStreamTrack):
     def __init__(self, device_index=0):
         super().__init__()        
         self._cap = cv2.VideoCapture(device_index)
-        
     #Can handle the frame here
     async def recv(self):
         # Wait for a new frame from the camera
