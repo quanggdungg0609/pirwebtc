@@ -131,7 +131,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# forder dont want to push on git
 aiortc/
+testing-zone/
 # Spyder project settings
 .spyderproject
 .spyproject

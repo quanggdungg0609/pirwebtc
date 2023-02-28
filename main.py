@@ -24,6 +24,7 @@ class PiRTC:
         self.id=str(uuid.uuid4())
         self._sio=socketio.AsyncClient(logger=True)
         self._listClient=set()
+        # capture video from camera, may be change to opencv capture to handle frame for movement detection
         self._player=MediaPlayer('/dev/video0', format='v4l2', options={
             'video_size':'320x240',
             'framerate':'15'
@@ -34,11 +35,15 @@ class PiRTC:
         # add event handle for socket.io
         self._sio.on("connect",self._handleConnect)
 
+        # handle the connection of clients
         self._sio.on("list-client-connecetd", self._handleListClientConnected)
         self._sio.on('new-client-conneceted', self.__handleClientConnect)
         self._sio.on('client-disconnect', self.__handleClientDisconnected)
 
+        #handle the receive offer sdp of client
         self._sio.on('offer', self._handleOffer)
+
+        # etablish connection with the socketio server
         await self._sio.connect("http://wan41.lanestel.net:3000/")
         await self._sio.wait()
     # on connection
@@ -74,6 +79,7 @@ class PiRTC:
     # when received a sdp offer 
     async def _handleOffer(self,data):
         if data.get('id') in self._listClient:
+            # create peer and answer the offer
             offer=RTCSessionDescription(data.get('payload').get('sdp'), data.get('payload').get('type'))
             pc=RTCPeerConnection()
             pc.addTrack(self._relay.subscribe(self._player.video))
