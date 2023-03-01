@@ -29,7 +29,12 @@ class PiRTC:
             'video_size':'320x240',
             'framerate':'15'
         })
-        self._relay=MediaRelay()
+        self._relay=None
+        
+    def _create_local_track(self):
+        if self._relay is None:
+            self._relay = MediaRelay()
+        return self._relay.subscribe(self._player.video)
 
     async def run(self):
         # add event handle for socket.io
@@ -37,8 +42,8 @@ class PiRTC:
 
         # handle the connection of clients
         self._sio.on("list-client-connecetd", self._handleListClientConnected)
-        self._sio.on('new-client-conneceted', self.__handleClientConnect)
-        self._sio.on('client-disconnect', self.__handleClientDisconnected)
+        self._sio.on('new-client-conneceted', self._handleClientConnect)
+        self._sio.on('client-disconnect', self._handleClientDisconnected)
 
         #handle the receive offer sdp of client
         self._sio.on('offer', self._handleOffer)
@@ -56,43 +61,55 @@ class PiRTC:
         await self._sio.emit("new", message)
 
     # get the list of clients connected on the server first time
+    # when we got the the list of clients connected, create a new peer and add 
+    # a new track for the for each peer of earch client
     async def _handleListClientConnected(self, data):
         for item in data:
-            self._listClient.add(item)
+            pc=RTCPeerConnection(config)
+            stream= self._create_local_track()
+            pc.addTrack(stream)
+            self._listClient.update({item : pc})
         print(self._listClient)
 
     # handle event when a new camera connected to the server
-    async def __handleClientConnect(self,data):
+    async def _handleClientConnect(self,data):
         logging.info("New client connected")
-        if data not in self._listClient:
-            self._listClient.add(data)
-        print(self._listClient)
+        if not self._listClient.has_key(data):
+            pc=RTCPeerConnection(config)
+            stream=self._create_local_track()
+            pc.addTrack(stream)
+            self._listClient.update({data: pc})
+        print(self._listClient.keys())
     
     # handle event when a camera disconnected
-    async def __handleClientDisconnected(self, data):
+    async def _handleClientDisconnected(self, data):
         logging.info("A client has diconnected from server...")
-        if data in self._listClient:
-            self._listClient.remove(data)
+        if self._listClient.has_key(data):
+            await self._listClient.get(data).close()
+            self._listClient.pop(data)
         print(self._listClient)
 
 
     # when received a sdp offer 
     async def _handleOffer(self,data):
-        if data.get('id') in self._listClient:
-            # create peer and answer the offer
+        if self._listClient.has_key(data.get('id')):
             offer=RTCSessionDescription(data.get('payload').get('sdp'), data.get('payload').get('type'))
-            pc=RTCPeerConnection()
-            pc.addTrack(self._relay.subscribe(self._player.video))
-            await pc.setRemoteDescription(offer)
-            answer= await pc.createAnswer()
-            await pc.setLocalDescription(answer)
+            #bind the sdp offer to the peer reserved for client 
+            try:
+                await self._listClient.get(data.get('id')).setRemoteDescription(offer)
+                answer = await self._listClient.get(data.get('id')).createAnswer()
+                await self._listClient.get(data.get('id')).setLocalDescription(answer)
+            except Exception:
+                print(Exception)
             message={
-                'target': data.get('id'),
-                'payload': json.dumps({"type":answer.type, "sdp":answer.sdp})
+                'target':data.get('id'),
+                'payload': json.dumps({"type": answer.type, "sdp": answer.sdp})
             }
-            await self._sio.emit('answer',message)
-        else:
-            print("Client not exist")
-        # TODO: need to be verify the video transmit
+            try:
+                await self._sio.emit("answer",message)
+            except Exception:
+                print(Exception)
+
+        
 pi=PiRTC()
 asyncio.run(pi.run())
