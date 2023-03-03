@@ -1,6 +1,7 @@
 import cv2
 from av import VideoFrame
-from aiortc.mediastreams import VideoStreamTrack
+import pyaudio
+from aiortc.mediastreams import VideoStreamTrack, AudioStreamTrack
 
 # Define a class that extends VideoStreamTrack to store the video stream from OpenCV
 class OpenCVStreamTrack(VideoStreamTrack):
@@ -18,4 +19,13 @@ class OpenCVStreamTrack(VideoStreamTrack):
         frame = VideoFrame.from_ndarray(frame, format="bgr24")
         
         # Return the VideoFrame as a dictionary
-        return {"frame": frame}
+        return frame
+    
+class PyAudioStreamTrack(AudioStreamTrack):
+    def __init__(self):
+        super().__init__()
+        self.__chunk=4096
+        self.__format = pyaudio.paInt16
+        self.__chanels = 2
+        self.__rate= 44100
+        self.__p= pyaudio.PyAudio()
