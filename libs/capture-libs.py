@@ -52,6 +52,15 @@ class PyAudioStreamTrack(AudioStreamTrack):
         super().__init__()
         self.__chunk=4096
         self.__format = pyaudio.paInt16
-        self.__chanels = 2
+        self.__channels = 2
         self.__rate= 44100
         self.__p= pyaudio.PyAudio()
+        self.__stream= self.__p.open(format= self.__format,
+                                channels=self.channels,
+                                rate= self.__rate,\
+                                input=True,
+                                frames_per_buffer=self.__chunk)
+
+    async def recv(self):
+        data= self.__stream.read(self.__chunk)
+        return data

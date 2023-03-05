@@ -41,7 +41,6 @@ class PiRTC:
         # add event handle for socket.io
         self._sio.on("connect",self._handleConnect)
 
-        # handle the connection of clients
         # self._sio.on('client-disconnect', self._handleClientDisconnected)
 
         #handle the receive offer sdp of client
