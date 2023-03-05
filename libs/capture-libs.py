@@ -8,6 +8,8 @@ class OpenCVStreamTrack(VideoStreamTrack):
     def __init__(self, device_index=0):
         super().__init__()        
         self._cap = cv2.VideoCapture(device_index)
+        self._prev_frame=None
+
     #Can handle the frame here
     async def recv(self):
         # Wait for a new frame from the camera
@@ -17,7 +19,31 @@ class OpenCVStreamTrack(VideoStreamTrack):
         
         # Convert the OpenCV frame to an AV VideoFrame
         frame = VideoFrame.from_ndarray(frame, format="bgr24")
-        
+        # Check for motion
+        gray_frame= cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        gray_frame= cv2.GaussianBlur(gray_frame, (21, 21), 0)
+        if self._prev_frame is None:
+            self._prev_frame=gray_frame
+        else:
+            frame_delta= cv2.absdiff(self._prev_frame, gray_frame)
+            thresh= cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY[1])
+            contours, _ = cv2.findContours(thresh.copyt(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if len(contours)==0: 
+                return None
+            
+            # draw bounding boxes around the contours
+            for contour in contours:
+                x, y, w, h= cv2.boundingRect(contour)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0,255,0), 2)
+        self._prev_frame= gray_frame
+
+        #Convert the openCV frame to AV VideoFrame
+
+        frame = VideoFrame.from_ndarray(frame, format='bgr24')
+
+        return frame
+            
+
         # Return the VideoFrame as a dictionary
         return frame
     
