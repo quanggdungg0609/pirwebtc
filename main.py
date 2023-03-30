@@ -3,8 +3,12 @@ import asyncio
 import uuid
 import logging
 import json
+import os
+import sys
 from aiortc import RTCSessionDescription, RTCPeerConnection, RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaRelay, MediaPlayer
+
+from captureLibs import DetectMotionTrack
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -34,18 +38,16 @@ class PiRTC:
         options = {"framerate": "20", "video_size": "320x240"}
         if self._relay is None:
             self._webcam = MediaPlayer("/dev/video0", format="v4l2", options=options)
+            # self._webcam=OpenCVStreamTrack()
             self._relay = MediaRelay()
         return self._relay.subscribe(self._webcam.video)
 
     async def run(self):
         # add event handle for socket.io
         self._sio.on("connect",self._handleConnect)
-
-        # self._sio.on('client-disconnect', self._handleClientDisconnected)
-
+        self._sio.on('client-disconnect', self._handleClientDisconnected)
         #handle the receive offer sdp of client
         self._sio.on('offer', self._handleOffer)
-
         # etablish connection with the socketio server
         await self._sio.connect("http://wan41.lanestel.net:3000/")
         await self._sio.wait()
@@ -59,6 +61,15 @@ class PiRTC:
         }
         await self._sio.emit("new", message)
 
+    #on client disconnect
+    async def _handleClientDisconnected(self,data):
+        '''
+            when a client disconnect, close a peer connected to the client immediately and 
+            remove the client from the list of client
+        '''
+        await self._listPeer.get(data).close()
+        if data in self._listPeer:
+            self._listPeer.pop(data,None)
 
     # when received a sdp offer 
     async def _handleOffer(self,data):
@@ -75,19 +86,15 @@ class PiRTC:
                 elif pc.connectionState == 'disconnected':
                     await pc.close()
 
-            
-
             stream= self._create_local_track()
+            
             pc.addTrack(stream)
-
             await pc.setRemoteDescription(offer)
-
             answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
-            
             message={
                 'target':data.get('id'),
-                'payload': json.dumps({"type": answer.type, "sdp": answer.sdp})
+                'payload': json.dumps({"type": pc.localDescription.type, "sdp": pc.localDescription.sdp})
             }
             await self._sio.emit("answer",message)
 
