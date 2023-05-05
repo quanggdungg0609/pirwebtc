@@ -8,9 +8,9 @@ import sys
 from aiortc import RTCSessionDescription, RTCPeerConnection, RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaRelay, MediaPlayer
 
-from captureLibs import DetectMotionTrack
+# from captureLibs import DetectMotionTrack
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 config=RTCConfiguration(iceServers=[
             RTCIceServer(
@@ -26,6 +26,7 @@ class PiRTC:
     def __init__(self):
         self.name='camera-1'
         self.id=str(uuid.uuid4())
+        self.information="Raspberry PI 4B"
         self._sio=socketio.AsyncClient(logger=True)
 
         self._listPeer=dict()
@@ -35,10 +36,11 @@ class PiRTC:
 
         
     def _create_local_track(self):
-        options = {"framerate": "20", "video_size": "320x240"}
+        #best resolution for avoid the delay when capture, compress and send video throught WebRTC
+        options = {"framerate": "10", "video_size": "720x480"}
         if self._relay is None:
             self._webcam = MediaPlayer("/dev/video0", format="v4l2", options=options)
-            # self._webcam=OpenCVStreamTrack()
+            # self._webcam=DetectMotionTrack(self._webcam.video)
             self._relay = MediaRelay()
         return self._relay.subscribe(self._webcam.video)
 
@@ -49,15 +51,19 @@ class PiRTC:
         #handle the receive offer sdp of client
         self._sio.on('offer', self._handleOffer)
         # etablish connection with the socketio server
-        await self._sio.connect("http://wan41.lanestel.net:3000/")
-        await self._sio.wait()
+        try:
+            await self._sio.connect("http://wan41.lanestel.net:3000/")
+            await self._sio.wait()
+        except Exception:
+            print("Can't connect to server")
 
     # on connection
     async def _handleConnect(self):
         message={
             "type":"camera",
             "id":self.id,
-            'name':self.name
+            'name':self.name,
+            'information':self.information
         }
         await self._sio.emit("new", message)
 
@@ -67,9 +73,13 @@ class PiRTC:
             when a client disconnect, close a peer connected to the client immediately and 
             remove the client from the list of client
         '''
-        await self._listPeer.get(data).close()
-        if data in self._listPeer:
-            self._listPeer.pop(data,None)
+        if(self._listPeer.get(data) is not None):
+            await self._listPeer.get(data).close()
+            if data in self._listPeer:
+                self._listPeer.pop(data,None)
+        
+
+        
 
     # when received a sdp offer 
     async def _handleOffer(self,data):
@@ -82,23 +92,38 @@ class PiRTC:
             async def on_connectionstatechange():
                 print("Connection state is %s" % pc.connectionState)
                 if pc.connectionState == "failed":
+                    
                     await pc.close()
-                elif pc.connectionState == 'disconnected':
+            @pc.on("iceconnectionstatechange")
+            async def on_iceconnectionstatechange():
+                print("ICE connection state is %s" % pc.iceConnectionState)
+                if pc.iceConnectionState=="failed":
                     await pc.close()
-
+            
             stream= self._create_local_track()
             
             pc.addTrack(stream)
-            await pc.setRemoteDescription(offer)
-            answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
+            try:
+                await pc.setRemoteDescription(offer)
+                answer = await pc.createAnswer()
+                await pc.setLocalDescription(answer)
+            except Exception:
+                print(Exception)
+
             message={
                 'target':data.get('id'),
                 'payload': json.dumps({"type": pc.localDescription.type, "sdp": pc.localDescription.sdp})
             }
-            await self._sio.emit("answer",message)
+            try:
+                await self._sio.emit("answer",message)
+            except Exception:
+                print(Exception)
 
+
+    async def stop(self):
+        await self._sio.disconnect()
 
         
 pi=PiRTC()
+
 asyncio.run(pi.run())
