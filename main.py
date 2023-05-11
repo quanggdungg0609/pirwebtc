@@ -47,6 +47,8 @@ class PiRTC:
     async def run(self):
         # add event handle for socket.io
         self._sio.on("connect",self._handleConnect)
+        self._sio.on("list-client-connected", self._handleListClientConnected)
+        self._sio.on("new-client-connected", self._handleNewClientConnect)
         self._sio.on('client-disconnect', self._handleClientDisconnected)
         #handle the receive offer sdp of client
         self._sio.on('offer', self._handleOffer)
@@ -67,6 +69,15 @@ class PiRTC:
         }
         await self._sio.emit("new", message)
 
+    def _handleListClientConnected(self,data):
+        for client in data:
+            self._listPeer.update({client:None})
+        
+
+    def _handleNewClientConnect(self,data):
+        print("client connected ->",data)
+        self._listPeer.update({data:None})
+
     #on client disconnect
     async def _handleClientDisconnected(self,data):
         '''
@@ -78,31 +89,43 @@ class PiRTC:
             if data in self._listPeer:
                 self._listPeer.pop(data,None)
         
-
         
+
+    
 
     # when received a sdp offer 
     async def _handleOffer(self,data):
             #bind the sdp offer to the peer reserved for client 
+            
             offer=RTCSessionDescription(data.get('payload').get('sdp'), data.get('payload').get('type'))
             pc=RTCPeerConnection(config)
-            self._listPeer.update({data.get('id') : pc })
 
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
                 print("Connection state is %s" % pc.connectionState)
-                print(list(self._listPeer.keys())[list(self._listPeer.values()).index(pc)])
-                if pc.connectionState == "failed":
-                    print(pc)
-                    await pc.close()
+                if pc.connectionState == "failed" or pc.connectionState=="closed":
+                    if pc in self._listPeer:    
+                        await pc.close()
+                        self._listPeer.update({list(self._listPeer.keys())[list(self._listPeer.values()).index(pc)]:None})
+                        
+
             @pc.on("signalingstatechange")
-            
+            async def on_signalingstatechange():
+                print("Signaling state is %s" % pc.signalingState)
+                if pc.signalingState == "closed":
+                    if pc in self._listPeer:    
+                        await pc.close()
+                        self._listPeer.update({list(self._listPeer.keys())[list(self._listPeer.values()).index(pc)]:None})
+                       
+
             @pc.on("iceconnectionstatechange")
             async def on_iceconnectionstatechange():
                 print("ICE connection state is %s" % pc.iceConnectionState)
-                if pc.iceConnectionState=="failed":
-                    print(pc)
-                    await pc.close()
+                if pc.iceConnectionState=="disconnected" or pc.iceConnectionState=="closed":
+                    if pc in self._listPeer:
+                        await pc.close()
+                        self._listPeer.update({list(self._listPeer.keys())[list(self._listPeer.values()).index(pc)]:None})
+
             
             stream= self._create_local_track()
             
@@ -122,6 +145,8 @@ class PiRTC:
                 await self._sio.emit("answer",message)
             except Exception:
                 print(Exception)
+            self._listPeer.update({data.get('id') : pc })
+            print(self._listPeer)
 
 
     async def stop(self):
