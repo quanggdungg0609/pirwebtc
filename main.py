@@ -91,13 +91,17 @@ class PiRTC:
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
                 print("Connection state is %s" % pc.connectionState)
+                print(list(self._listPeer.keys())[list(self._listPeer.values()).index(pc)])
                 if pc.connectionState == "failed":
-                    
+                    print(pc)
                     await pc.close()
+            @pc.on("signalingstatechange")
+            
             @pc.on("iceconnectionstatechange")
             async def on_iceconnectionstatechange():
                 print("ICE connection state is %s" % pc.iceConnectionState)
                 if pc.iceConnectionState=="failed":
+                    print(pc)
                     await pc.close()
             
             stream= self._create_local_track()
